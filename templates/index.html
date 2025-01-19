@@ -1,0 +1,535 @@
+<!doctype html>
+<html lang="ko" class="h-full">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Logs Viewer</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <link
+            href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css"
+            rel="stylesheet"
+        />
+        <style>
+            @import url("https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap");
+            * {
+                font-family: "JetBrains Mono", monospace;
+            }
+            .btn-glow:hover {
+                box-shadow: 0 0 10px rgba(255, 255, 255, 0.1);
+            }
+            .domain-cell {
+                display: flex;
+                align-items: center;
+                white-space: nowrap;
+            }
+            .table-cell-content {
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                max-width: 300px;
+            }
+            .drop-zone {
+                border: 2px dashed #666;
+                transition: all 0.3s ease;
+            }
+            .drop-zone.drag-over {
+                border-color: #fff;
+                background-color: rgba(255, 255, 255, 0.05);
+            }
+            .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.7);
+            z-index: 1000;
+        }
+
+        .modal-content {
+            position: relative;
+            background-color: #111111;
+            margin: 2% auto;
+            padding: 20px;
+            border: 1px solid #333;
+            border-radius: 12px;
+            width: 95%;
+            max-width: 1400px;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+
+        .close {
+            position: absolute;
+            right: 20px;
+            top: 20px;
+            cursor: pointer;
+        }
+
+        .sort-btn {
+            cursor: pointer;
+            user-select: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .sort-btn i {
+            opacity: 0.5;
+            transition: opacity 0.2s;
+        }
+
+        .sort-btn:hover i {
+            opacity: 1;
+        }
+
+        .sort-btn.active i {
+            opacity: 1;
+            color: white;
+        }
+        </style>
+    </head>
+    <body class="h-full bg-black text-white">
+        <div class="flex h-full">
+            <div class="flex-1 p-8 bg-[#111111]">
+                <div class="max-w-[1400px] mx-auto">
+                    <div class="mb-8">
+                        <div id="dropZone" class="relative drop-zone rounded-xl mb-4">
+                            <input id="queryInput" type="text" placeholder="enter your query or drag & drop JSON/CSV file here..."
+                                   class="w-full bg-black border-0 rounded-xl px-6 py-3 text-lg text-white placeholder-gray-500 focus:outline-none">
+                        </div>
+                        <div class="flex flex-wrap gap-3 mt-4">
+                            <button id="queryBtn" class="px-4 py-2 bg-black border border-gray-800 rounded-xl text-base hover:bg-gray-900 transition-all btn-glow">
+                                <i class="fas fa-search mr-2"></i>search
+                            </button>
+                            <button id="exportCsvBtn" class="px-4 py-2 bg-black border border-gray-800 rounded-xl text-base hover:bg-gray-900 transition-all btn-glow">
+                                <i class="fas fa-file-csv mr-2"></i>csv
+                            </button>
+                            <button id="exportJsonBtn" class="px-4 py-2 bg-black border border-gray-800 rounded-xl text-base hover:bg-gray-900 transition-all btn-glow">
+                                <i class="fas fa-file-code mr-2"></i>json
+                            </button>
+                            <button id="exportUniquePasswordsBtn" class="px-4 py-2 bg-black border border-gray-800 rounded-xl text-base hover:bg-gray-900 transition-all btn-glow">
+                                <i class="fas fa-key mr-2"></i>passwords
+                            </button>
+                            <button id="exportUniqueEmailsBtn" class="px-4 py-2 bg-black border border-gray-800 rounded-xl text-base hover:bg-gray-900 transition-all btn-glow">
+                                <i class="fas fa-envelope mr-2"></i>emails
+                            </button>
+                            <button id="showFileStatsBtn" class="px-4 py-2 bg-black border border-gray-800 rounded-xl text-base hover:bg-gray-900 transition-all btn-glow">
+                                <i class="fas fa-file-lines mr-2"></i>files
+                            </button>
+                        </div>
+                    </div>
+
+                    <div id="loader" class="hidden flex justify-center items-center mb-6">
+                        <i class="fas fa-spinner fa-spin fa-2x text-gray-500"></i>
+                    </div>
+
+                    <div class="overflow-x-auto max-h-[calc(100vh-250px)] overflow-y-auto border border-gray-800 rounded-xl">
+                        <table class="w-full table-fixed">
+                            <thead class="bg-black sticky top-0">
+                                <tr>
+                                    <th class="w-1/4 py-3 px-6 text-left text-gray-400 font-normal text-lg border-b border-gray-800">Domain</th>
+                                    <th class="w-1/4 py-3 px-6 text-left text-gray-400 font-normal text-lg border-b border-gray-800">URI</th>
+                                    <th class="w-1/4 py-3 px-6 text-left text-gray-400 font-normal text-lg border-b border-gray-800">Email/Username</th>
+                                    <th class="w-1/4 py-3 px-6 text-left text-gray-400 font-normal text-lg border-b border-gray-800">Password</th>
+                                </tr>
+                            </thead>
+                            <tbody id="logsTableBody">
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="fileStatsModal" class="modal">
+            <div class="modal-content">
+                <span class="close text-gray-500 text-2xl hover:text-white">&times;</span>
+                <div class="mb-6">
+                    <h2 class="text-2xl mb-4">File Statistics</h2>
+                    <div class="flex gap-3 mb-4">
+                        <button id="refreshStatsBtn" class="px-4 py-2 bg-black border border-gray-800 rounded-xl text-base hover:bg-gray-900 transition-all btn-glow">
+                            <i class="fas fa-sync-alt mr-2"></i>refresh
+                        </button>
+                        <div class="px-4 py-2 bg-black border border-gray-800 rounded-xl text-base">
+                            <span class="text-gray-400 mr-2">Total Lines:</span>
+                            <span id="totalLinesCount">0</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="fileStatsLoader" class="hidden flex justify-center items-center mb-6">
+                    <i class="fas fa-spinner fa-spin fa-2x text-gray-500"></i>
+                </div>
+
+                <div class="overflow-x-auto border border-gray-800 rounded-xl">
+                    <table class="w-full">
+                        <thead class="bg-black sticky top-0">
+                            <tr>
+                                <th class="w-1/3 py-3 px-6 text-left text-gray-400 font-normal text-lg border-b border-gray-800">Filename</th>
+                                <th class="w-1/3 py-3 px-6 text-left text-gray-400 font-normal text-lg border-b border-gray-800">
+                                    <div class="sort-btn" data-sort="timestamp">
+                                        Created At
+                                        <i class="fas fa-sort"></i>
+                                    </div>
+                                </th>
+                                <th class="w-1/3 py-3 px-6 text-left text-gray-400 font-normal text-lg border-b border-gray-800">
+                                    <div class="sort-btn" data-sort="lines">
+                                        Lines Count
+                                        <i class="fas fa-sort"></i>
+                                    </div>
+                                </th>
+                            </tr>
+                        </thead>
+                        <tbody id="fileStatsTableBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+
+        <script>
+            const modal = document.getElementById("fileStatsModal");
+            const showFileStatsBtn =
+                document.getElementById("showFileStatsBtn");
+            const closeBtn = document.querySelector(".close");
+            const fileStatsLoader = document.getElementById("fileStatsLoader");
+            const totalLinesCount = document.getElementById("totalLinesCount");
+            const refreshStatsBtn = document.getElementById("refreshStatsBtn");
+
+            showFileStatsBtn.onclick = () => {
+                modal.style.display = "block";
+                fetchFileStats();
+            };
+
+            closeBtn.onclick = () => {
+                modal.style.display = "none";
+            };
+
+            window.onclick = (event) => {
+                if (event.target === modal) {
+                    modal.style.display = "none";
+                }
+            };
+
+            refreshStatsBtn.onclick = fetchFileStats;
+
+            let currentFileStats = { files: [] };
+            let currentSort = { field: null, direction: 'asc' };
+
+            function fetchFileStats() {
+                fileStatsLoader.classList.remove('hidden');
+                fetch('/api/logs/files/')
+                    .then(response => response.json())
+                    .then(data => {
+                        currentFileStats = data;
+                        updateFileStatsTable();
+                        fileStatsLoader.classList.add('hidden');
+                    })
+                    .catch(error => {
+                        console.error('Error fetching file stats:', error);
+                        fileStatsLoader.classList.add('hidden');
+                    });
+            }
+            function sortFiles(field) {
+                if (currentSort.field === field) {
+                    currentSort.direction = currentSort.direction === 'asc' ? 'desc' : 'asc';
+                } else {
+                    currentSort.field = field;
+                    currentSort.direction = 'asc';
+                }
+
+                // Update sort icons
+                document.querySelectorAll('.sort-btn i').forEach(icon => {
+                    icon.className = 'fas fa-sort';
+                });
+
+                const currentIcon = document.querySelector(`.sort-btn[data-sort="${field}"] i`);
+                currentIcon.className = `fas fa-sort-${currentSort.direction === 'asc' ? 'up' : 'down'}`;
+
+                // Update active state
+                document.querySelectorAll('.sort-btn').forEach(btn => {
+                    btn.classList.remove('active');
+                });
+                document.querySelector(`.sort-btn[data-sort="${field}"]`).classList.add('active');
+
+                updateFileStatsTable();
+            }
+            function updateFileStatsTable() {
+            const tbody = document.getElementById('fileStatsTableBody');
+            const files = [...currentFileStats.files];
+
+            if (currentSort.field) {
+                files.sort((a, b) => {
+                    let comparison = 0;
+                    if (currentSort.field === 'timestamp') {
+                        comparison = new Date(a.creation_time) - new Date(b.creation_time);
+                    } else if (currentSort.field === 'lines') {
+                        comparison = a.line_count - b.line_count;
+                    }
+                    return currentSort.direction === 'asc' ? comparison : -comparison;
+                });
+            }
+
+            tbody.innerHTML = '';
+            let total = 0;
+
+            files.forEach(file => {
+                total += file.line_count;
+                const row = document.createElement('tr');
+                row.className = 'border-b border-gray-800 hover:bg-gray-900';
+                row.innerHTML = `
+                    <td class="py-3 px-6">
+                        <div class="flex items-center">
+                            <i class="fas fa-file-text mr-3 text-gray-500"></i>
+                            <div class="text-white">${file.filename}</div>
+                        </div>
+                    </td>
+                    <td class="py-3 px-6 text-gray-300">
+                        ${new Date(file.creation_time).toLocaleString()}
+                    </td>
+                    <td class="py-3 px-6 text-gray-300">
+                        ${file.line_count.toLocaleString()}
+                    </td>
+                `;
+                tbody.appendChild(row);
+            });
+
+            totalLinesCount.textContent = total.toLocaleString();
+        }
+
+            document.querySelectorAll('.sort-btn').forEach(btn => {
+                btn.addEventListener('click', () => sortFiles(btn.dataset.sort));
+            });
+
+            let logData = [];
+            const dropZone = document.getElementById("dropZone");
+
+            ["dragenter", "dragover", "dragleave", "drop"].forEach(
+                (eventName) => {
+                    dropZone.addEventListener(
+                        eventName,
+                        preventDefaults,
+                        false,
+                    );
+                },
+            );
+
+            function preventDefaults(e) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
+
+            ["dragenter", "dragover"].forEach((eventName) => {
+                dropZone.addEventListener(eventName, highlight, false);
+            });
+
+            ["dragleave", "drop"].forEach((eventName) => {
+                dropZone.addEventListener(eventName, unhighlight, false);
+            });
+
+            function highlight(e) {
+                dropZone.classList.add("drag-over");
+            }
+
+            function unhighlight(e) {
+                dropZone.classList.remove("drag-over");
+            }
+
+            dropZone.addEventListener("drop", handleDrop, false);
+
+            function handleDrop(e) {
+                const dt = e.dataTransfer;
+                const file = dt.files[0];
+
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onload = function (event) {
+                        try {
+                            if (file.name.endsWith(".json")) {
+                                logData = JSON.parse(event.target.result);
+                                populateTable(logData);
+                            } else if (file.name.endsWith(".csv")) {
+                                logData = parseCSV(event.target.result);
+                                populateTable(logData);
+                            }
+                        } catch (error) {
+                            console.error("Error parsing file:", error);
+                        }
+                    };
+
+                    if (
+                        file.name.endsWith(".json") ||
+                        file.name.endsWith(".csv")
+                    ) {
+                        reader.readAsText(file);
+                    }
+                }
+            }
+
+            function parseCSV(csv) {
+                const lines = csv.split("\n");
+                const headers = lines[0]
+                    .split(",")
+                    .map((header) =>
+                        header.trim().toLowerCase().replace(/["']/g, ""),
+                    );
+
+                return lines
+                    .slice(1)
+                    .map((line) => {
+                        if (!line.trim()) return null;
+                        const values = line
+                            .split(",")
+                            .map((value) => value.trim().replace(/["']/g, ""));
+                        const obj = {};
+                        headers.forEach((header, i) => {
+                            obj[header] = values[i] || "";
+                        });
+                        return obj;
+                    })
+                    .filter((item) => item !== null);
+            }
+
+            document.getElementById("queryBtn").onclick = function () {
+                const query = document.getElementById("queryInput").value;
+                const loader = document.getElementById("loader");
+                loader.classList.remove("hidden");
+                fetch(`/api/logs/search?query=${encodeURIComponent(query)}`)
+                    .then((response) => response.json())
+                    .then((data) => {
+                        logData = data;
+                        populateTable(data);
+                        loader.classList.add("hidden");
+                    })
+                    .catch((error) => {
+                        console.error("Error fetching data:", error);
+                        loader.classList.add("hidden");
+                    });
+            };
+
+            function populateTable(data) {
+                const logsTableBody = document.getElementById("logsTableBody");
+                logsTableBody.innerHTML = "";
+
+                data.forEach((log, index) => {
+                    const row = document.createElement("tr");
+                    const redactedDomain =
+                        log.domain.length > 30
+                            ? log.domain.slice(0, 30) + "..."
+                            : log.domain;
+                    const redactedUri =
+                        log.uri.length > 30
+                            ? log.uri.slice(0, 30) + "..."
+                            : log.uri;
+                    const redactedEmail =
+                        log.email.length > 30
+                            ? log.email.slice(0, 30) + "..."
+                            : log.email;
+                    const redactedPassword =
+                        log.password.length > 30
+                            ? log.password.slice(0, 30) + "..."
+                            : log.password;
+
+                    row.className =
+                        "border-b border-gray-800 hover:bg-gray-900";
+                    row.innerHTML = `
+                    <td class="py-3 px-6">
+                        <div class="domain-cell">
+                            <img src="https://www.google.com/s2/favicons?domain=${encodeURIComponent(log.domain)}&sz=48" alt="${redactedDomain} favicon" class="w-6 h-6 mr-3">
+                            <div class="table-cell-content">${redactedDomain}</div>
+                        </div>
+                    </td>
+                    <td class="py-3 px-6">
+                        <div class="table-cell-content text-gray-300">${redactedUri || "-"}</div>
+                    </td>
+                    <td class="py-3 px-6">
+                        <div class="table-cell-content text-gray-300">${redactedEmail}</div>
+                    </td>
+                    <td class="py-3 px-6">
+                        <div class="table-cell-content text-gray-300">${redactedPassword}</div>
+                    </td>
+                `;
+                    logsTableBody.appendChild(row);
+                });
+            }
+
+            document.getElementById("exportCsvBtn").onclick = function () {
+                exportToCSV(logData);
+            };
+
+            document.getElementById("exportJsonBtn").onclick = function () {
+                exportToJSON(logData);
+            };
+
+            document.getElementById("exportUniquePasswordsBtn").onclick =
+                function () {
+                    exportUniquePasswords(logData);
+                };
+
+            document.getElementById("exportUniqueEmailsBtn").onclick =
+                function () {
+                    exportUniqueEmails(logData);
+                };
+
+            function exportToCSV(data) {
+                const csvRows = [];
+                const headers = ["Domain", "URI", "Email", "Password"];
+                csvRows.push(headers.join(","));
+
+                data.forEach((row) => {
+                    const values = headers.map((header) => {
+                        const escaped = (
+                            "" + row[header.toLowerCase()]
+                        ).replace(/"/g, '\\"');
+                        return `"${escaped}"`;
+                    });
+                    csvRows.push(values.join(","));
+                });
+
+                downloadFile(csvRows.join("\n"), "logs.csv", "text/csv");
+            }
+
+            function exportToJSON(data) {
+                const jsonString = JSON.stringify(data, null, 2);
+                downloadFile(jsonString, "logs.json", "application/json");
+            }
+
+            function exportUniquePasswords(data) {
+                const uniquePasswords = [
+                    ...new Set(data.map((item) => item.password)),
+                ];
+                const jsonString = JSON.stringify(uniquePasswords, null, 2);
+                downloadFile(
+                    jsonString,
+                    "unique_passwords.json",
+                    "application/json",
+                );
+            }
+
+            function exportUniqueEmails(data) {
+                const uniqueEmails = [
+                    ...new Set(data.map((item) => item.email)),
+                ];
+                const jsonString = JSON.stringify(uniqueEmails, null, 2);
+                downloadFile(
+                    jsonString,
+                    "unique_emails.json",
+                    "application/json",
+                );
+            }
+
+            function downloadFile(content, fileName, contentType) {
+                const blob = new Blob([content], { type: contentType });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.setAttribute("href", url);
+                a.setAttribute("download", fileName);
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+            }
+        </script>
+    </body>
+</html>
