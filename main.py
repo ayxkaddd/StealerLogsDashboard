@@ -21,9 +21,9 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
 
-@app.get("/api/logs/search/", response_model=List[LogCredential])
-async def search_logs(query: str):
-    run_rg_query(query.strip())
+@app.get("/api/logs/search", response_model=List[LogCredential])
+async def search_logs(query: str, bulk: bool = False):
+    run_rg_query(query.strip(), bulk)
 
     extracted_logs = []
     try:

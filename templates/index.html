@@ -353,6 +353,10 @@
                             } else if (file.name.endsWith(".csv")) {
                                 logData = parseCSV(event.target.result);
                                 populateTable(logData);
+                            } else if (file.name.endsWith(".txt")) {
+                                txtFileContent = event.target.result;
+                                queryInput.value = `Loaded file: ${file.name}`;
+                                queryInput.disabled = true;
                             }
                         } catch (error) {
                             console.error("Error parsing file:", error);
@@ -361,11 +365,19 @@
 
                     if (
                         file.name.endsWith(".json") ||
-                        file.name.endsWith(".csv")
+                        file.name.endsWith(".csv") ||
+                        file.name.endsWith(".txt")
                     ) {
                         reader.readAsText(file);
                     }
                 }
+            }
+
+            function processTxtContent(content) {
+                return content
+                    .split('\n')
+                    .filter(line => line.trim())
+                    .join('|');
             }
 
             function parseCSV(csv) {
@@ -393,21 +405,49 @@
             }
 
             document.getElementById("queryBtn").onclick = function () {
-                const query = document.getElementById("queryInput").value;
                 const loader = document.getElementById("loader");
                 loader.classList.remove("hidden");
-                fetch(`/api/logs/search?query=${encodeURIComponent(query)}`)
-                    .then((response) => response.json())
-                    .then((data) => {
-                        logData = data;
-                        populateTable(data);
-                        loader.classList.add("hidden");
-                    })
-                    .catch((error) => {
-                        console.error("Error fetching data:", error);
-                        loader.classList.add("hidden");
-                    });
+
+                if (txtFileContent) {
+                    const processedContent = processTxtContent(txtFileContent);
+                    fetch(`/api/logs/search?query=${encodeURIComponent(processedContent)}&bulk=true`)
+                        .then((response) => response.json())
+                        .then((data) => {
+                            logData = data;
+                            populateTable(data);
+                            loader.classList.add("hidden");
+                        })
+                        .catch((error) => {
+                            console.error("Error fetching data:", error);
+                            loader.classList.add("hidden");
+                        });
+                } else {
+                    const query = queryInput.value;
+                    fetch(`/api/logs/search?query=${encodeURIComponent(query)}`)
+                        .then((response) => response.json())
+                        .then((data) => {
+                            logData = data;
+                            populateTable(data);
+                            loader.classList.add("hidden");
+                        })
+                        .catch((error) => {
+                            console.error("Error fetching data:", error);
+                            loader.classList.add("hidden");
+                        });
+                }
             };
+            const resetBtn = document.createElement('button');
+            resetBtn.innerHTML = '<i class="fas fa-times mr-2"></i>clear';
+            resetBtn.className = 'px-4 py-2 bg-black border border-gray-800 rounded-xl text-base hover:bg-gray-900 transition-all btn-glow';
+            resetBtn.onclick = function() {
+                txtFileContent = null;
+                queryInput.value = '';
+                queryInput.disabled = false;
+                logData = [];
+                document.getElementById('logsTableBody').innerHTML = '';
+            };
+            document.querySelector('.flex.flex-wrap.gap-3.mt-4').appendChild(resetBtn);
+
 
             function populateTable(data) {
                 const logsTableBody = document.getElementById("logsTableBody");

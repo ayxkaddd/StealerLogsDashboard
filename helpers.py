@@ -24,14 +24,22 @@ def extract_logs_info(line: str) -> LogCredential:
     return LogCredential(domain=domain.strip(), uri="/"+uri.strip(), email=email.strip(), password=password.strip())
 
 
-def run_rg_query(query):
+def run_rg_query(query, bulk: bool):
     target_directory = config.FOLDER_WITH_LOGS
     output_file = "/tmp/logs.txt"
 
-    command = [
-        "rg", "-i", re.escape(query), "-g", "*.txt",
-        "--text", "--no-line-number", "--no-filename"
-    ]
+    if bulk:
+        search_terms = query.split('|')
+        pattern = '|'.join(re.escape(term.strip()) for term in search_terms if term.strip())
+        command = [
+            "rg", "-i", pattern, "-g", "*.txt",
+            "--text", "--no-line-number", "--no-filename"
+        ]
+    else:
+        command = [
+            "rg", "-i", re.escape(query), "-g", "*.txt",
+            "--text", "--no-line-number", "--no-filename"
+        ]
 
     try:
         with open(output_file, 'w') as outfile:
