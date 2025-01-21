@@ -1,0 +1,25 @@
+from typing import List
+from pydantic import BaseModel, Field
+
+class LogCredential(BaseModel):
+    """
+    Represents log credentials extracted from log files
+    """
+    domain: str = Field(..., description="Domain name")
+    uri: str = Field(..., description="URI path")
+    email: str = Field(..., description="Email or username")
+    password: str = Field(..., description="Password")
+
+class FileInfo(BaseModel):
+    """
+    Information about a log file
+    """
+    filename: str = Field(..., description="Name of the file")
+    creation_time: str = Field(..., description="File creation timestamp")
+    line_count: int = Field(..., description="Number of lines in the file")
+
+class FileListResponse(BaseModel):
+    """
+    Response containing list of file information
+    """
+    files: List[FileInfo] = Field(..., description="List of file information")

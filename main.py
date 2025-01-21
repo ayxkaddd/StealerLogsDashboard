@@ -1,65 +1,54 @@
 from typing import List
-
-from fastapi import FastAPI, Request
-from fastapi.exceptions import HTTPException
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from helpers import (
-    extract_logs_info,
-    load_cache,
-    run_rg_query
-)
-from models import (
-    FileInfo,
-    FileListResponse,
-    LogCredential
-)
+from services.log_service import LogService
+from services.file_service import FileService
+from models.log_models import LogCredential, FileListResponse
 
-app = FastAPI()
-app.mount("/static", StaticFiles(directory="static"), name="static")
-templates = Jinja2Templates(directory="templates")
+class LogsAPI:
+    def __init__(self):
+        self.app = FastAPI(title="Logs API", version="1.0.0")
+        self.setup_routes()
+        self.setup_static_files()
+        self.log_service = LogService()
+        self.file_service = FileService()
+        self.templates = Jinja2Templates(directory="templates")
 
+    def setup_static_files(self):
+        self.app.mount("/static", StaticFiles(directory="static"), name="static")
 
-@app.get("/api/logs/search", response_model=List[LogCredential])
-async def search_logs(query: str, bulk: bool = False):
-    run_rg_query(query.strip(), bulk)
+    def setup_routes(self):
+        self.app.get("/api/logs/search")(self.search_logs)
+        self.app.get("/api/logs/files/")(self.get_files)
+        self.app.get("/")(self.logs_page)
 
-    extracted_logs = []
-    try:
-        with open("/tmp/logs.txt", "r", encoding='utf-8', errors='ignore') as f:
-            logs = f.readlines()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    async def search_logs(self, query: str, bulk: bool = False) -> List[LogCredential]:
+        """
+        Search logs based on query string
+        """
+        try:
+            return await self.log_service.search_logs(query.strip(), bulk)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
 
-    lines_seen = set()
-    for log in logs:
-        extracted_log = extract_logs_info(log)
-        line = extracted_log.domain + extracted_log.uri + extracted_log.email + extracted_log.password
-        if LogCredential.model_validate(extracted_log).domain != '':
-            if line not in lines_seen:
-                extracted_logs.append(extracted_log)
-                lines_seen.add(line)
+    async def get_files(self) -> FileListResponse:
+        """
+        Get list of files with their statistics
+        """
+        try:
+            return await self.file_service.get_files_info()
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
 
-    return extracted_logs
-
-
-@app.get("/api/logs/files/", response_model=FileListResponse)
-async def get_files():
-    cache = load_cache()
-
-    files_data = []
-    for file in cache:
-        stats = FileInfo(
-            filename=file['name'],
-            creation_time=file['timestamp'],
-            line_count=file['lines_count']
+    def logs_page(self, request: Request):
+        """
+        Render the main logs viewer page
+        """
+        return self.templates.TemplateResponse(
+            request=request,
+            name="index.html"
         )
-        files_data.append(stats)
 
-    return FileListResponse(files=files_data)
-
-
-@app.get('/')
-def logs_page(request: Request):
-    return templates.TemplateResponse(request=request, name="index.html")
+app = LogsAPI().app
