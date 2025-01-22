@@ -1,90 +1,92 @@
-from typing import List
-import subprocess
-import re
-from pathlib import Path
-from config import FOLDER_WITH_LOGS
-from models.log_models import LogCredential
+import datetime
+from typing import List, Generator
+from sqlalchemy import select, bindparam, insert
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.orm import sessionmaker
+from models.log_models import Log, LogCredential
+from config import DATABASE_URL
 
 class LogService:
     def __init__(self):
-        self.output_file = Path("/tmp/logs.txt")
-        self.logs_directory = Path(FOLDER_WITH_LOGS)
+        self.engine = create_async_engine(
+            DATABASE_URL,
+            pool_size=20,  # Increased for better concurrent performance
+            max_overflow=40,
+            pool_pre_ping=True  # Connection health check
+        )
+        self.async_session = sessionmaker(
+            self.engine, expire_on_commit=False, class_=AsyncSession
+        )
 
     async def search_logs(self, query: str, bulk: bool = False) -> List[LogCredential]:
         """
-        Search logs and return matching credentials
+        Search logs in the database based on the query string.
         """
-        await self._execute_search(query, bulk)
-        return await self._process_search_results()
+        async with self.async_session() as session:
+            stmt = select(Log).where(
+                Log.domain.like(f"%{query}%") |
+                Log.uri.like(f"%{query}%") |
+                Log.email.like(f"%{query}%") |
+                Log.password.like(f"%{query}%")
+            )
+            result = await session.execute(stmt)
+            logs = result.scalars().all()
 
-    async def _execute_search(self, query: str, bulk: bool):
-        """
-        Execute ripgrep search command
-        """
-        command = self._build_search_command(query, bulk)
-
-        try:
-            with open(self.output_file, 'w') as outfile:
-                subprocess.run(
-                    command,
-                    cwd=self.logs_directory,
-                    stdout=outfile,
-                    check=True
+            return [
+                LogCredential(
+                    domain=log.domain,
+                    uri=log.uri,
+                    email=log.email,
+                    password=log.password,
                 )
-        except subprocess.CalledProcessError as e:
-            raise RuntimeError(f"Search command failed: {e}")
+                for log in logs
+            ]
 
-    def _build_search_command(self, query: str, bulk: bool) -> List[str]:
-        """
-        Build the ripgrep command based on search parameters
-        """
-        base_command = ["rg", "-i", "-g", "*.txt", "--text", "--no-line-number", "--no-filename"]
+    def _chunk_file(self, file_path: str, chunk_size: int = 10000) -> Generator[List[str], None, None]:
+        lines = []
+        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+            for line in f:
+                lines.append(line)
+                if len(lines) >= chunk_size:
+                    yield lines
+                    lines = []
+            if lines:
+                yield lines
 
-        if bulk:
-            search_terms = query.split('|')
-            pattern = '|'.join(re.escape(term.strip()) for term in search_terms if term.strip())
-            return base_command + [pattern]
+    async def insert_logs_from_file(self, file_path: str, batch_size: int = 5000):
+        now = datetime.datetime.now()
 
-        return base_command + [re.escape(query)]
+        async with self.async_session() as session:
+            async with session.begin():
+                for chunk in self._chunk_file(file_path):
+                    batch_values = []
+                    for line in chunk:
+                        credential = self._parse_log_line(line)
+                        if credential.domain:
+                            batch_values.append({
+                                "domain": credential.domain,
+                                "uri": credential.uri,
+                                "email": credential.email,
+                                "password": credential.password,
+                                "created_at": now
+                            })
 
-    async def _process_search_results(self) -> List[LogCredential]:
-        """
-        Process search results and extract credentials
-        """
-        try:
-            with open(self.output_file, "r", encoding='utf-8', errors='ignore') as f:
-                logs = f.readlines()
-        except Exception as e:
-            raise RuntimeError(f"Failed to read search results: {e}")
+                        if len(batch_values) >= batch_size:
+                            await session.execute(
+                                insert(Log),
+                                batch_values
+                            )
+                            batch_values = []
 
-        return self._extract_unique_credentials(logs)
-
-    def _extract_unique_credentials(self, logs: List[str]) -> List[LogCredential]:
-        """
-        Extract unique credentials from log lines
-        """
-        credentials = []
-        seen_lines = set()
-
-        for log in logs:
-            credential = self._parse_log_line(log)
-            if not credential.domain:
-                continue
-
-            line_hash = hash(f"{credential.domain}{credential.uri}{credential.email}{credential.password}")
-            if line_hash not in seen_lines:
-                credentials.append(credential)
-                seen_lines.add(line_hash)
-
-        return credentials
+                    if batch_values:
+                        await session.execute(
+                            insert(Log),
+                            batch_values
+                        )
 
     def _parse_log_line(self, line: str) -> LogCredential:
-        """
-        Parse a log line into a LogCredential object
-        """
-        line = line.replace(" ", ":").replace("|", ":")
+        line = line.replace("\x00", " ").encode("utf-8", errors="ignore").decode("utf-8")
 
-        # Extract URL parts
         if "https://" in line:
             line = line.split("https://")[-1]
         elif "http://" in line:
@@ -97,6 +99,5 @@ class LogService:
             domain=url_parts[0].strip(),
             uri="/" + "/".join(url_parts[1:]).strip() if len(url_parts) > 1 else "/",
             email=parts[1].strip() if len(parts) > 1 else "",
-            password=parts[2].strip() if len(parts) > 2 else ""
+            password=parts[2].strip() if len(parts) > 2 else "",
         )
-
