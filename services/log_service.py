@@ -85,7 +85,29 @@ class LogService:
                         )
 
     def _parse_log_line(self, line: str) -> LogCredential:
+        line = line.replace(" ", ":").replace("|", ":")
         line = line.replace("\x00", " ").encode("utf-8", errors="ignore").decode("utf-8")
+
+        if "android://" in line:
+            line = line.replace("android://", "")
+
+            parts = line.split("/")
+
+            domain = parts[0].split("@")[1]
+            domain = "android://" + domain
+
+            uri = "/"
+
+            credentials = parts[1].split(":")
+            email = credentials[1] if len(credentials) > 1 else ""
+            password = credentials[2] if len(credentials) > 2 else ""
+
+            return LogCredential(
+                domain=domain,
+                uri=uri,
+                email=email,
+                password=password,
+            )
 
         if "https://" in line:
             line = line.split("https://")[-1]
