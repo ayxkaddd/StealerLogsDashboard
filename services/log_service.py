@@ -24,10 +24,9 @@ class LogService:
         """
         async with self.async_session() as session:
             stmt = select(Log).where(
-                Log.domain.like(f"%{query}%") |
-                Log.uri.like(f"%{query}%") |
-                Log.email.like(f"%{query}%") |
-                Log.password.like(f"%{query}%")
+                Log.domain.ilike(f"%{query}%") |
+                Log.email.ilike(f"%{query}%") |
+                Log.password.ilike(f"%{query}%")
             )
             result = await session.execute(stmt)
             logs = result.scalars().all()
@@ -85,28 +84,29 @@ class LogService:
                         )
 
     def _parse_log_line(self, line: str) -> LogCredential:
-        line = line.replace(" ", ":").replace("|", ":")
         line = line.replace("\x00", " ").encode("utf-8", errors="ignore").decode("utf-8")
+        line = line.replace(" ", ":").replace("|", ":")
 
         if "android://" in line:
             line = line.replace("android://", "")
 
-            parts = line.split("/")
-
-            domain = parts[0].split("@")[1]
-            domain = "android://" + domain
+            parts = line.split(":")
+            if "==@" in parts[0]:
+                domain = parts[0].split("@")[1]
+                domain = "android://" + domain
+            else:
+                domain = parts[0]
 
             uri = "/"
 
-            credentials = parts[1].split(":")
-            email = credentials[1] if len(credentials) > 1 else ""
-            password = credentials[2] if len(credentials) > 2 else ""
+            email = parts[1] if len(parts) > 1 else ""
+            password = parts[2] if len(parts) > 2 else ""
 
             return LogCredential(
-                domain=domain,
-                uri=uri,
-                email=email,
-                password=password,
+                domain=domain[:200],
+                uri=uri[:200],
+                email=email[:200],
+                password=password[:200],
             )
 
         if "https://" in line:
@@ -117,9 +117,14 @@ class LogService:
         parts = line.split(':')
         url_parts = parts[0].split("/")
 
+        domain=url_parts[0].strip()
+        uri="/" + "/".join(url_parts[1:]).strip() if len(url_parts) > 1 else "/"
+        email=parts[1].strip() if len(parts) > 1 else ""
+        password=parts[2].strip() if len(parts) > 2 else ""
+
         return LogCredential(
-            domain=url_parts[0].strip(),
-            uri="/" + "/".join(url_parts[1:]).strip() if len(url_parts) > 1 else "/",
-            email=parts[1].strip() if len(parts) > 1 else "",
-            password=parts[2].strip() if len(parts) > 2 else "",
+            domain=domain[:200],
+            uri=uri[:200],
+            email=email[:200],
+            password=password[:200],
         )
