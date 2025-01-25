@@ -1,4 +1,5 @@
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 import datetime
 import json
 import re
@@ -9,6 +10,14 @@ from sqlalchemy.orm import sessionmaker
 from models.log_models import Log, LogCredential
 from config import DATABASE_URL
 
+ANDROID_DOMAIN_PATTERN = re.compile(
+    r'(?:.*==@|android://(?:[^@/]+@)?)([^/:]+)',
+    re.IGNORECASE
+)
+SPLIT_PATTERN = re.compile(r'[\s:|]+')
+URI_SPLIT_PATTERN = re.compile(r'/(.*)')
+
+
 class LogService:
     def __init__(self):
         self.engine = create_async_engine(
@@ -18,31 +27,23 @@ class LogService:
             pool_pre_ping=True  # Connection health check
         )
         self.async_session = sessionmaker(
-            self.engine, expire_on_commit=False, class_=AsyncSession
+            self.engine, expire_on_commit=False, autoflush=False, class_=AsyncSession
         )
+        self.executor = ThreadPoolExecutor(max_workers=8)
 
     async def search_logs(self, query: str, bulk: bool = False) -> List[LogCredential]:
         """
         Search logs in the database based on the query string.
         """
         async with self.async_session() as session:
-            stmt = select(Log).where(
+            stmt = select(Log.domain, Log.uri, Log.email, Log.password).where(
                 Log.domain.ilike(f"%{query}") |
                 Log.email.ilike(f"%{query}%") |
                 Log.password.ilike(f"%{query}%")
             )
             result = await session.execute(stmt)
-            logs = result.scalars().all()
 
-            return [
-                LogCredential(
-                    domain=log.domain,
-                    uri=log.uri,
-                    email=log.email,
-                    password=log.password,
-                )
-                for log in logs
-            ]
+            return [LogCredential(**row._asdict()) for row in result]
 
     def _chunk_file(self, file_path: str, chunk_size: int = 10000) -> Generator[List[str], None, None]:
         lines = []
@@ -59,38 +60,30 @@ class LogService:
         now = datetime.datetime.now()
 
         async with self.async_session() as session:
-            async with session.begin():
-                for chunk in self._chunk_file(file_path):
-                    batch_values = []
-                    for line in chunk:
-                        credential = await self._parse_log_line_async(line)
-                        if credential and credential.domain:
-                            batch_values.append({
-                                "domain": credential.domain,
-                                "uri": credential.uri,
-                                "email": credential.email,
-                                "password": credential.password,
-                                "created_at": now
-                            })
+            for chunk in self._chunk_file(file_path):
+                batch_values = await self._parse_chunk_async(chunk, now)
 
-                        if len(batch_values) >= batch_size:
-                            await session.execute(
-                                insert(Log),
-                                batch_values
-                            )
-                            batch_values = []
+                for i in range(0, len(batch_values), batch_size):
+                    await session.execute(
+                        insert(Log.__table__),
+                        batch_values[i:i+batch_size]
+                    )
+                await session.commit()
 
-                    if batch_values:
-                        await session.execute(
-                            insert(Log),
-                            batch_values
-                        )
+    async def _parse_chunk_async(self, chunk: List[str], now: datetime.datetime):
+        return await asyncio.get_event_loop().run_in_executor(
+            self.executor,
+            self._parse_chunk,
+            chunk, now
+        )
 
-    async def _parse_log_line_async(self, line: str) -> Optional[LogCredential]:
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, self._parse_log_line, line)
+    def _parse_chunk(self, chunk: List[str], now: datetime.datetime) -> List[dict]:
+        return [
+            cred for line in chunk
+            if (cred := self._parse_log_line(line, now)) is not None
+        ]
 
-    def _parse_log_line(self, line: str) -> Optional[LogCredential]:
+    def _parse_log_line(self, line: str, now: datetime.datetime) -> Optional[dict]:
         line = line.replace("\x00", " ").strip()
         if not line:
             return None
@@ -102,31 +95,33 @@ class LogService:
             except json.JSONDecodeError:
                 pass
 
-        if "android://" in line:
-            android_match = re.search(r'android://((?:==@)?[^:]+)', line)
-            if not android_match:
-                return None
+        domain_match = ANDROID_DOMAIN_PATTERN.search(line)
+        if domain_match:
+            domain_part = domain_match.group(1).strip('/:')
+            android_domain = f"android://{domain_part}"
 
-            domain_part = android_match.group(1)
-            if "==@" in domain_part:
-                domain = f"android://{domain_part.split('@')[-1]}"
-            else:
-                domain = f"android://{domain_part}"
+            remaining = line.split(domain_part, 1)[-1].lstrip(':/| ')
+            parts = [p for p in SPLIT_PATTERN.split(remaining) if p]
 
-            remaining = line.split(domain, 1)[-1]
-            parts = re.split(r'[ :|]+', remaining)
-            return LogCredential(
-                domain=domain[:200],
-                uri="/"[:200],
-                email=parts[0][:200] if len(parts) > 0 else "",
-                password=parts[1][:200] if len(parts) > 1 else "",
-            )
+            email = parts[0][:200] if len(parts) >= 1 else ""
+            password = parts[1][:200] if len(parts) >= 2 else ""
+
+            return {
+                "domain": android_domain[:200],
+                "uri": "/",
+                "email": email,
+                "password": password,
+                "created_at": now
+            }
 
         clean_line = line.replace("http://", "").replace("https://", "")
-        parts = re.split(r'[ :|]+', clean_line)
+        parts = [p.strip() for p in SPLIT_PATTERN.split(clean_line) if p.strip()]
 
-        email = parts[-2].strip() if len(parts) >= 2 else ""
-        password = parts[-1].strip() if len(parts) >= 1 else ""
+        if not parts:
+            return None
+
+        password = parts[-1][:200] if parts else ""
+        email = parts[-2][:200] if len(parts) >= 2 else ""
         url_part = ':'.join(parts[:-2]) if len(parts) >= 2 else clean_line
 
         if '/' in url_part:
@@ -136,9 +131,10 @@ class LogService:
             domain = url_part
             uri = '/'
 
-        return LogCredential(
-            domain=domain[:200],
-            uri=uri[:200],
-            email=email[:200],
-            password=password[:200],
-        )
+        return {
+            "domain": domain[:200],
+            "uri": uri[:200],
+            "email": email,
+            "password": password,
+            "created_at": now
+        }
