@@ -19,9 +19,9 @@ class LogsAPI:
         self.app.mount("/static", StaticFiles(directory="static"), name="static")
 
     def setup_routes(self):
-        self.app.get("/api/logs/search")(self.search_logs)
+        self.app.get("/api/logs/search/")(self.search_logs)
         self.app.get("/api/logs/files/")(self.get_files)
-        self.app.post("/api/logs/import")(self.import_logs)
+        self.app.post("/api/logs/import/")(self.import_logs)
         self.app.get("/")(self.logs_page)
 
     async def search_logs(self, query: str, bulk: bool = False) -> List[LogCredential]:

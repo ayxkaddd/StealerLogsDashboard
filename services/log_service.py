@@ -1,5 +1,8 @@
+import asyncio
 import datetime
-from typing import List, Generator
+import json
+import re
+from typing import List, Generator, Optional
 from sqlalchemy import select, bindparam, insert
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
@@ -24,7 +27,7 @@ class LogService:
         """
         async with self.async_session() as session:
             stmt = select(Log).where(
-                Log.domain.ilike(f"%{query}%") |
+                Log.domain.ilike(f"%{query}") |
                 Log.email.ilike(f"%{query}%") |
                 Log.password.ilike(f"%{query}%")
             )
@@ -60,8 +63,8 @@ class LogService:
                 for chunk in self._chunk_file(file_path):
                     batch_values = []
                     for line in chunk:
-                        credential = self._parse_log_line(line)
-                        if credential.domain:
+                        credential = await self._parse_log_line_async(line)
+                        if credential and credential.domain:
                             batch_values.append({
                                 "domain": credential.domain,
                                 "uri": credential.uri,
@@ -83,44 +86,55 @@ class LogService:
                             batch_values
                         )
 
-    def _parse_log_line(self, line: str) -> LogCredential:
-        line = line.replace("\x00", " ").encode("utf-8", errors="ignore").decode("utf-8")
-        line = line.replace(" ", ":").replace("|", ":")
+    async def _parse_log_line_async(self, line: str) -> Optional[LogCredential]:
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, self._parse_log_line, line)
+
+    def _parse_log_line(self, line: str) -> Optional[LogCredential]:
+        line = line.replace("\x00", " ").strip()
+        if not line:
+            return None
+
+        if line[0] == '{' and line[-1] == '}':
+            try:
+                json.loads(line)
+                return None
+            except json.JSONDecodeError:
+                pass
 
         if "android://" in line:
-            line = line.replace("android://", "")
+            android_match = re.search(r'android://((?:==@)?[^:]+)', line)
+            if not android_match:
+                return None
 
-            parts = line.split(":")
-            if "==@" in parts[0]:
-                domain = parts[0].split("@")[1]
-                domain = "android://" + domain
+            domain_part = android_match.group(1)
+            if "==@" in domain_part:
+                domain = f"android://{domain_part.split('@')[-1]}"
             else:
-                domain = parts[0]
+                domain = f"android://{domain_part}"
 
-            uri = "/"
-
-            email = parts[1] if len(parts) > 1 else ""
-            password = parts[2] if len(parts) > 2 else ""
-
+            remaining = line.split(domain, 1)[-1]
+            parts = re.split(r'[ :|]+', remaining)
             return LogCredential(
                 domain=domain[:200],
-                uri=uri[:200],
-                email=email[:200],
-                password=password[:200],
+                uri="/"[:200],
+                email=parts[0][:200] if len(parts) > 0 else "",
+                password=parts[1][:200] if len(parts) > 1 else "",
             )
 
-        if "https://" in line:
-            line = line.split("https://")[-1]
-        elif "http://" in line:
-            line = line.split("http://")[-1]
+        clean_line = line.replace("http://", "").replace("https://", "")
+        parts = re.split(r'[ :|]+', clean_line)
 
-        parts = line.split(':')
-        url_parts = parts[0].split("/")
+        email = parts[-2].strip() if len(parts) >= 2 else ""
+        password = parts[-1].strip() if len(parts) >= 1 else ""
+        url_part = ':'.join(parts[:-2]) if len(parts) >= 2 else clean_line
 
-        domain=url_parts[0].strip()
-        uri="/" + "/".join(url_parts[1:]).strip() if len(url_parts) > 1 else "/"
-        email=parts[1].strip() if len(parts) > 1 else ""
-        password=parts[2].strip() if len(parts) > 2 else ""
+        if '/' in url_part:
+            domain, uri_part = url_part.split('/', 1)
+            uri = '/' + uri_part
+        else:
+            domain = url_part
+            uri = '/'
 
         return LogCredential(
             domain=domain[:200],
