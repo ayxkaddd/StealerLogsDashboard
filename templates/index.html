@@ -464,9 +464,9 @@
                     const processedContent = txtFileContent.split('\n')
                         .filter(line => line.trim())
                         .join('|');
-                    response = await fetch(`/api/logs/search?query=${encodeURIComponent(processedContent)}&bulk=true`);
+                    response = await fetch(`/api/logs/search/?query=${encodeURIComponent(processedContent)}&bulk=true`);
                 } else {
-                    response = await fetch(`/api/logs/search?query=${encodeURIComponent(queryInput.value)}`);
+                    response = await fetch(`/api/logs/search/?query=${encodeURIComponent(queryInput.value)}`);
                 }
 
                 logData = await response.json();
