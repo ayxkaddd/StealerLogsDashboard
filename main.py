@@ -1,11 +1,14 @@
-from typing import List
-from fastapi import FastAPI, Request, HTTPException
+import datetime
+from typing import Any, Dict, List
+from fastapi import FastAPI, Request, HTTPException, status
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
+from config import API_ID, API_HASH
 from services.log_service import LogService
 from services.file_service import FileService
-from models.log_models import LogCredential, FileListResponse, SearchRequest
+from models.log_models import LogCredential, FileListResponse, SearchRequest, TelegramSearchResponse
+from services.telegram_service import TelegramLogFetcher
 
 class LogsAPI:
     def __init__(self):
@@ -30,6 +33,8 @@ class LogsAPI:
         self.app.post("/api/logs/search/")(self.search_logs)
         self.app.get("/api/logs/files/")(self.get_files)
         self.app.post("/api/logs/import/")(self.import_logs)
+        self.app.post("/api/logs/search-telegram/", response_model=TelegramSearchResponse)(self.search_telegram_logs)
+
         self.app.get("/")(self.logs_page)
 
     async def search_logs(self, search_request: SearchRequest) -> List[LogCredential]:
@@ -59,6 +64,46 @@ class LogsAPI:
             return {"message": "Logs imported successfully"}
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
+
+    async def search_telegram_logs(self, search_request: SearchRequest) -> Dict[str, Any]:
+        try:
+            telegram_fetcher = TelegramLogFetcher(
+                api_id=int(API_ID),
+                api_hash=API_HASH
+            )
+            file_path, result_count = await telegram_fetcher.fetch_logs(search_request.query)
+
+            if result_count == 0:
+                return {
+                    "results": [],
+                    "file_path": "",
+                    "count": 0
+                }
+
+            if not file_path:
+                raise HTTPException(
+                    status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                    detail="No response from Telegram bot"
+                )
+
+            credentials = []
+            with open(file_path, 'r') as f:
+                for line in f:
+                    parsed = self.log_service._parse_log_line(line.strip(), now=datetime.datetime.now())
+                    if parsed:
+                        credentials.append(LogCredential(**parsed).dict())
+
+            return {
+                "results": credentials,
+                "file_path": file_path,
+                "count": len(credentials)
+            }
+
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=str(e)
+            )
 
     def logs_page(self, request: Request):
         """

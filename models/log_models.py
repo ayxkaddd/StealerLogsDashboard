@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import List
+from typing import Dict, List
 from pydantic import BaseModel, Field
 from sqlalchemy import Column, Integer, String, TIMESTAMP
 from sqlalchemy.ext.declarative import declarative_base
@@ -48,3 +48,8 @@ class FileListResponse(BaseModel):
     Response containing list of file information
     """
     files: List[FileInfo] = Field(..., description="List of file information")
+
+class TelegramSearchResponse(BaseModel):
+    results: List[Dict[str, str]]
+    file_path: str
+    count: int
