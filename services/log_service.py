@@ -4,10 +4,10 @@ import datetime
 import json
 import re
 from typing import List, Generator, Optional
-from sqlalchemy import select, bindparam, insert
+from sqlalchemy import or_, select, bindparam, insert
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
-from models.log_models import Log, LogCredential
+from models.log_models import Log, LogCredential, SearchField, SearchRequest
 from config import DATABASE_URL
 
 ANDROID_DOMAIN_PATTERN = re.compile(
@@ -31,18 +31,31 @@ class LogService:
         )
         self.executor = ThreadPoolExecutor(max_workers=8)
 
-    async def search_logs(self, query: str, bulk: bool = False) -> List[LogCredential]:
+    async def search_logs(self, search_request: SearchRequest) -> List[LogCredential]:
         """
-        Search logs in the database based on the query string.
+        Search logs in the database based on the search request.
         """
         async with self.async_session() as session:
-            stmt = select(Log.domain, Log.uri, Log.email, Log.password).where(
-                Log.domain.ilike(f"%{query}") |
-                Log.email.ilike(f"%{query}%") |
-                Log.password.ilike(f"%{query}%")
-            )
-            result = await session.execute(stmt)
+            query = search_request.query.strip()
 
+            stmt = select(Log.domain, Log.uri, Log.email, Log.password)
+
+            if search_request.field == SearchField.ALL:
+                stmt = stmt.where(
+                    or_(
+                        Log.domain.ilike(f"%{query}%"),
+                        Log.email.ilike(f"%{query}%"),
+                        Log.password.ilike(f"%{query}%")
+                    )
+                )
+            elif search_request.field == SearchField.DOMAIN:
+                stmt = stmt.where(Log.domain.ilike(f"%{query}%"))
+            elif search_request.field == SearchField.EMAIL:
+                stmt = stmt.where(Log.email.ilike(f"%{query}%"))
+            elif search_request.field == SearchField.PASSWORD:
+                stmt = stmt.where(Log.password.ilike(f"%{query}%"))
+
+            result = await session.execute(stmt)
             return [LogCredential(**row._asdict()) for row in result]
 
     def _chunk_file(self, file_path: str, chunk_size: int = 10000) -> Generator[List[str], None, None]:

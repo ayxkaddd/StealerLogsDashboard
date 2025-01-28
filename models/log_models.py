@@ -1,3 +1,4 @@
+from enum import Enum
 from typing import List
 from pydantic import BaseModel, Field
 from sqlalchemy import Column, Integer, String, TIMESTAMP
@@ -22,6 +23,17 @@ class LogCredential(BaseModel):
     uri: str = Field(..., description="URI path")
     email: str = Field(..., description="Email or username")
     password: str = Field(..., description="Password")
+
+class SearchField(str, Enum):
+    DOMAIN = "domain"
+    EMAIL = "email"
+    PASSWORD = "password"
+    ALL = "all"
+
+class SearchRequest(BaseModel):
+    query: str = Field(..., description="Search query string")
+    field: SearchField = Field(default=SearchField.ALL, description="Field to search in")
+    bulk: bool = Field(default=False, description="Bulk search flag")
 
 class FileInfo(BaseModel):
     """

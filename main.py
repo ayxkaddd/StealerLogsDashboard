@@ -2,9 +2,10 @@ from typing import List
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from fastapi.middleware.cors import CORSMiddleware
 from services.log_service import LogService
 from services.file_service import FileService
-from models.log_models import LogCredential, FileListResponse
+from models.log_models import LogCredential, FileListResponse, SearchRequest
 
 class LogsAPI:
     def __init__(self):
@@ -14,22 +15,29 @@ class LogsAPI:
         self.log_service = LogService()
         self.file_service = FileService()
         self.templates = Jinja2Templates(directory="templates")
+        self.app.add_middleware(
+            CORSMiddleware,
+            allow_origins=["*"],
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
 
     def setup_static_files(self):
         self.app.mount("/static", StaticFiles(directory="static"), name="static")
 
     def setup_routes(self):
-        self.app.get("/api/logs/search/")(self.search_logs)
+        self.app.post("/api/logs/search/")(self.search_logs)
         self.app.get("/api/logs/files/")(self.get_files)
         self.app.post("/api/logs/import/")(self.import_logs)
         self.app.get("/")(self.logs_page)
 
-    async def search_logs(self, query: str, bulk: bool = False) -> List[LogCredential]:
+    async def search_logs(self, search_request: SearchRequest) -> List[LogCredential]:
         """
         Search logs based on query string.
         """
         try:
-            return await self.log_service.search_logs(query.strip(), bulk)
+            return await self.log_service.search_logs(search_request)
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 

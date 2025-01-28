@@ -98,6 +98,80 @@
             opacity: 1;
             color: white;
         }
+        .search-container {
+            display: flex;
+            gap: 1px;
+            background: #111111;
+            border-radius: 0.75rem;
+        }
+
+        .search-type-dropdown {
+            position: relative;
+            min-width: 140px;
+            background: black;
+            border-radius: 0.75rem 0 0 0.75rem;
+        }
+
+        .search-type-btn {
+            width: 100%;
+            height: 100%;
+            padding: 0 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            color: #888;
+            transition: all 0.2s;
+            background: black;
+            border: none;
+            font-size: 1rem;
+            border-radius: 0.75rem 0 0 0.75rem;
+        }
+
+        .search-type-btn:hover {
+            color: white;
+        }
+
+        .search-type-menu {
+            display: none;
+            position: absolute;
+            top: calc(100% + 5px);
+            left: 0;
+            background-color: black;
+            border: 1px solid #333;
+            border-radius: 0.75rem;
+            width: 100%;
+            z-index: 1000;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+
+        .search-type-menu.show {
+            display: block;
+        }
+
+        .search-type-item {
+            padding: 0.75rem 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .search-type-item:hover {
+            background-color: rgba(255, 255, 255, 0.1);
+        }
+
+        .search-type-item i {
+            width: 1.25rem;
+        }
+
+        .query-input-container {
+            flex: 1;
+            background: black;
+            border-radius: 0 0.75rem 0.75rem 0;
+            overflow: hidden;
+
+        }
     </style>
 </head>
 <body class="h-full bg-black text-white">
@@ -108,9 +182,40 @@
                 <!-- Search Section -->
                 <div class="mb-8">
                     <div id="dropZone" class="relative drop-zone rounded-xl mb-4">
-                        <input id="queryInput" type="text"
-                               placeholder="enter your query or drag & drop JSON/CSV file here..."
-                               class="w-full bg-black border-0 rounded-xl px-6 py-3 text-lg text-white placeholder-gray-500 focus:outline-none">
+                        <div class="search-container">
+                            <!-- Search Type Dropdown -->
+                            <div class="search-type-dropdown">
+                                <button id="searchTypeBtn" class="search-type-btn">
+                                    <i class="fas fa-search"></i>
+                                    <span id="currentSearchType">ALL</span>
+                                    <i class="fas fa-chevron-down ml-1"></i>
+                                </button>
+                                <div id="searchTypeMenu" class="search-type-menu">
+                                    <div class="search-type-item" data-value="all">
+                                        <i class="fas fa-search"></i>
+                                        <span>All Fields</span>
+                                    </div>
+                                    <div class="search-type-item" data-value="domain">
+                                        <i class="fas fa-globe"></i>
+                                        <span>Domain</span>
+                                    </div>
+                                    <div class="search-type-item" data-value="email">
+                                        <i class="fas fa-envelope"></i>
+                                        <span>Email</span>
+                                    </div>
+                                    <div class="search-type-item" data-value="password">
+                                        <i class="fas fa-key"></i>
+                                        <span>Password</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <!-- Query Input -->
+                            <div class="query-input-container">
+                                <input id="queryInput" type="text"
+                                       placeholder="enter your query or drag & drop JSON/CSV file here..."
+                                       class="w-full h-full bg-transparent border-0 px-6 py-3 text-lg text-white placeholder-gray-500 focus:outline-none">
+                            </div>
+                        </div>
                     </div>
 
                     <!-- Action Buttons -->
@@ -215,6 +320,7 @@
         let txtFileContent = null;
         let currentFileStats = { files: [] };
         let currentSort = { field: null, direction: 'asc' };
+        let currentSearchType = 'all';
 
         // DOM Elements
         const dropZone = document.getElementById('dropZone');
@@ -222,6 +328,9 @@
         const modal = document.getElementById('fileStatsModal');
         const fileStatsLoader = document.getElementById('fileStatsLoader');
         const totalLinesCount = document.getElementById('totalLinesCount');
+        const searchTypeBtn = document.getElementById('searchTypeBtn');
+        const searchTypeMenu = document.getElementById('searchTypeMenu');
+        const currentSearchTypeText = document.getElementById('currentSearchType');
 
         // Button click handlers
         document.getElementById('queryBtn').onclick = handleSearch;
@@ -244,9 +353,41 @@
             btn.addEventListener('click', () => sortFiles(btn.dataset.sort));
         });
 
+        searchTypeBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            searchTypeMenu.classList.toggle('show');
+        });
+
+        // Handle search type selection
+        document.querySelectorAll('.search-type-item').forEach(item => {
+            item.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const value = item.dataset.value;
+                currentSearchType = value;
+                currentSearchTypeText.textContent = value.toUpperCase();
+                searchTypeMenu.classList.remove('show');
+            });
+        });
+
+        // Close dropdown when clicking outside
+        document.addEventListener('click', (e) => {
+            if (!searchTypeBtn.contains(e.target) && !searchTypeMenu.contains(e.target)) {
+                searchTypeMenu.classList.remove('show');
+            }
+        });
+
+        dropZone.addEventListener('click', (e) => {
+            if (searchTypeBtn.contains(e.target) || searchTypeMenu.contains(e.target)) {
+                e.stopPropagation();
+            }
+        });
+
         // Drag and drop handlers
         ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
             dropZone.addEventListener(eventName, preventDefaults, false);
+            document.body.addEventListener(eventName, preventDefaults, false);
         });
 
         ['dragenter', 'dragover'].forEach(eventName => {
@@ -261,7 +402,8 @@
 
         // File handling functions
         function handleDrop(e) {
-            const file = e.dataTransfer.files[0];
+            const dt = e.dataTransfer;
+            const file = dt.files[0];
             if (!file) return;
 
             const reader = new FileReader();
@@ -464,9 +606,29 @@
                     const processedContent = txtFileContent.split('\n')
                         .filter(line => line.trim())
                         .join('|');
-                    response = await fetch(`/api/logs/search/?query=${encodeURIComponent(processedContent)}&bulk=true`);
+                    response = await fetch('/api/logs/search/', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            query: processedContent,
+                            field: currentSearchType,
+                            bulk: true
+                        })
+                    });
                 } else {
-                    response = await fetch(`/api/logs/search/?query=${encodeURIComponent(queryInput.value)}`);
+                    response = await fetch('/api/logs/search/', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            query: queryInput.value,
+                            field: currentSearchType,
+                            bulk: false
+                        })
+                    });
                 }
 
                 logData = await response.json();
