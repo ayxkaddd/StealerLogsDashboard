@@ -1,7 +1,7 @@
 from enum import Enum
 from typing import Dict, List
 from pydantic import BaseModel, Field
-from sqlalchemy import Column, Integer, String, TIMESTAMP
+from sqlalchemy import Column, Index, Integer, String, TIMESTAMP
 from sqlalchemy.ext.declarative import declarative_base
 
 Base = declarative_base()
@@ -14,6 +14,27 @@ class Log(Base):
     email = Column(String)
     password = Column(String)
     created_at = Column(TIMESTAMP, default="CURRENT_TIMESTAMP")
+
+    __table_args__ = (
+        Index(
+            'idx_logs_domain_trgm',
+            domain,
+            postgresql_using='gin',
+            postgresql_ops={'domain': 'gin_trgm_ops'}
+        ),
+        Index(
+            'idx_logs_email_trgm',
+            email,
+            postgresql_using='gin',
+            postgresql_ops={'email': 'gin_trgm_ops'}
+        ),
+        Index(
+            'idx_logs_password_trgm',
+            password,
+            postgresql_using='gin',
+            postgresql_ops={'password': 'gin_trgm_ops'}
+        ),
+    )
 
 class LogCredential(BaseModel):
     """

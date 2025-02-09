@@ -1,5 +1,8 @@
+test.py
 venv
 __pycache__
 tg.session
 tg.session-journal
 downloads/
+migrations/versions
+migrations/script.py.mako
