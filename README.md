@@ -1,55 +1,84 @@
 # StealerLogsDashboard
 
+good looking dashboard to query your infostealer logs.
+
 ## Installation
-1. **Clone the Repository**:
-   ```bash
-   git clone https://github.com/ayxkaddd/StealerLogsDashboard.git
+
+1. **Clone the repository**
+
+    ```bash
+    git clone https://github.com/ayxkaddd/StealerLogsDashboard
+    cd StealerLogsDashboard
     ```
-2. **Install Python Dependencies**:
+
+2. **Create a virtual environment and activate it**
+
+    ```bash
+    python -m venv venv
+    source venv/bin/activate
+    ```
+
+3. **Install dependencies**
     ```bash
     pip install -r requirements.txt
     ```
-3. Install [ripgrep](https://github.com/BurntSushi/ripgrep): Use your system's package manager to install `ripgrep`. For example:
-    - On Ubuntu/Debian:
-    ```bash
-    sudo apt install ripgrep
+4. **Install PostgreSQl on your system. For example with docker-compose**:
+    docker-compose.yml:
+    ```yml
+    version: "3.8"
+    services:
+    db:
+        container_name: postgres_container
+        image: postgres
+        restart: always
+        environment:
+        POSTGRES_USER: root
+        POSTGRES_PASSWORD: root
+        POSTGRES_DB: test_db
+        ports:
+        - "5432:5432"
     ```
-    - On Arch based systems:
+    Run:
     ```bash
-    sudo pacman -S ripgrep
-    ```
-    - On macOS (with Homebrew):
-    ```bash
-    brew install ripgrep
+    docker-compose up -d
     ```
 
 ---
 
 ## Configuration
-1. **Open the `config.py` file and specify the path to the folder containing your logs. For example**:
-    ```python
-    LOGS_PATH = "/path/to/your/logs"
-    ```
-2. **Update the `update_logs.sh` script to reflect the same log folder path.**
+1. **Configure the database**
+   - Update `config.py`:
+     ```python
+     DATABASE_URL = "postgresql+asyncpg://root:root@localhost/stealer_logs"
+     ```
+2. **Configure Telegram API credentials**:
+   - Update `config.py`:
+     ```python
+     API_ID = "your_api_id"
+     API_HASH = "your_api_hash"
+     ```
+   - You can obtain these credentials by visiting my.telegram.org/auth?to=apps. Sign in to your Telegram account, create a new app or retrieve the credentials from an existing one.
 
 ---
 
 ## Usage
-1. **Generate File Stats Cache: Run the `update_logs.sh` script to parse the logs and create the `file_stats_cache.json` file**:
+1. **Generate and Apply Migrations**:
     ```bash
-    ./update_logs.sh
+    alembic revision --autogenerate -m "Initial migration"
+    alembic upgrade head
     ```
-    ⚠️ Note: This step may take some time, depending on the number and size of your log files.
-2. **Start the Dashboard: Launch the application using `uvicorn`**:
+2. **Start the Dashboard**:
     ```bash
     uvicorn main:app --reload
     ```
     By default, the app will be available at `http://127.0.0.1:8000`.
+4. **Import Logs to database**:
+    ```bash
+    curl -X 'POST' 'http://127.0.0.1:8000/api/logs/import/?file_path=/path/to/your/log' -H 'accept: application/json'
+    ```
 
 ---
 
 ## Preview
 
 <p align="center"><img src="assets/2025-01-20_00-28.png"></p>
-
-<p align="center"><img src="assets/2025-01-20_00-28_1.png"></p>
