@@ -4,4 +4,4 @@ __pycache__
 tg.session
 tg.session-journal
 downloads/
-migrations/versions
+migrations/versions/*.py
