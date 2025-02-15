@@ -3,11 +3,12 @@ from telethon import TelegramClient, events
 import asyncio
 import os
 
+
 class TelegramLogFetcher:
     def __init__(self, api_id: int, api_hash: str, session_name: str = "tg"):
         self.client = TelegramClient(session_name, api_id, api_hash)
         self.group_id = 1943303299
-        self.bot_username = '@ysxfetx_bot'
+        self.bot_username = "ysxfetx_bot"
         self.current_query_msg = None
         self.response_received = asyncio.Event()
         self.download_path = None
@@ -17,14 +18,17 @@ class TelegramLogFetcher:
     async def _handle_bot_response(self, event):
         """Handle incoming messages from the bot"""
         if self.current_query_msg:
-            if event.sender.username == self.bot_username.lstrip('@'):
-                if event.is_reply and event.reply_to.reply_to_msg_id == self.current_query_msg.id:
+            if event.sender.username == self.bot_username:
+                if (
+                    event.is_reply
+                    and event.reply_to.reply_to_msg_id == self.current_query_msg.id
+                ):
                     message_text = event.raw_text
                     self.result_count = None
 
-                    for line in message_text.split('\n'):
-                        if '🔎' in line and 'result(s)' in line:
-                            parts = line.replace('🔎', '').strip().split()
+                    for line in message_text.split("\n"):
+                        if "🔎" in line and "result(s)" in line:
+                            parts = line.replace("🔎", "").strip().split()
                             for part in parts:
                                 if part.isdigit():
                                     self.result_count = int(part)
@@ -32,8 +36,10 @@ class TelegramLogFetcher:
                             break
 
                     if event.file:
-                        os.makedirs('downloads', exist_ok=True)
-                        self.download_path = await event.download_media(f"downloads/{event.id}")
+                        os.makedirs("downloads", exist_ok=True)
+                        self.download_path = await event.download_media(
+                            f"downloads/{event.id}"
+                        )
                         self.response_received.set()
                     elif self.result_count == 0:
                         self.download_path = None
@@ -49,15 +55,15 @@ class TelegramLogFetcher:
         try:
             await self.client.start()
             self._event_handler = self.client.add_event_handler(
-                self._handle_bot_response,
-                events.NewMessage(chats=self.group_id)
+                self._handle_bot_response, events.NewMessage(chats=self.group_id)
             )
 
-            self.client.add_event_handler(self._handle_bot_response, events.NewMessage(chats=self.group_id))
+            self.client.add_event_handler(
+                self._handle_bot_response, events.NewMessage(chats=self.group_id)
+            )
 
             self.current_query_msg = await self.client.send_message(
-                self.group_id,
-                f"/s {query}"
+                self.group_id, f"/s {query}"
             )
 
             try:
@@ -70,7 +76,7 @@ class TelegramLogFetcher:
         finally:
             # Cleanup
             if self._event_handler:
-                self.client.remove_event_handler(self._event_handler) 
+                self.client.remove_event_handler(self._event_handler)
                 self._event_handler = None
 
             if self.current_query_msg:

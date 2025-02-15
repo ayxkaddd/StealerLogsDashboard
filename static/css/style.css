@@ -1,0 +1,181 @@
+/* Base styles */
+@import url("https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap");
+* {
+    font-family: "JetBrains Mono", monospace;
+}
+
+/* Button styles */
+.btn-glow:hover {
+    box-shadow: 0 0 10px rgba(255, 255, 255, 0.1);
+}
+
+/* Table styles */
+.domain-cell {
+    display: flex;
+    align-items: center;
+    white-space: nowrap;
+}
+
+.table-cell-content {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 300px;
+}
+
+/* Drop zone styles */
+.drop-zone {
+    border: 2px dashed #666;
+    transition: all 0.3s ease;
+}
+
+.drop-zone.drag-over {
+    border-color: #fff;
+    background-color: rgba(255, 255, 255, 0.05);
+}
+
+/* Modal styles */
+.modal {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.7);
+    z-index: 1000;
+}
+
+.modal-content {
+    position: relative;
+    background-color: #111111;
+    margin: 2% auto;
+    padding: 20px;
+    border: 1px solid #333;
+    border-radius: 12px;
+    width: 95%;
+    max-width: 1400px;
+    max-height: 90vh;
+    overflow-y: auto;
+}
+
+.close {
+    position: absolute;
+    right: 20px;
+    top: 20px;
+    cursor: pointer;
+}
+
+/* Sort button styles */
+.sort-btn {
+    cursor: pointer;
+    user-select: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.sort-btn i {
+    opacity: 0.5;
+    transition: opacity 0.2s;
+}
+
+.sort-btn:hover i {
+    opacity: 1;
+}
+
+.sort-btn.active i {
+    opacity: 1;
+    color: white;
+}
+.search-container {
+    display: flex;
+    gap: 1px;
+    background: #111111;
+    border-radius: 0.75rem;
+}
+
+.search-type-dropdown {
+    position: relative;
+    min-width: 140px;
+    background: black;
+    border-radius: 0.75rem 0 0 0.75rem;
+}
+
+.search-type-btn {
+    width: 100%;
+    height: 100%;
+    padding: 0 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: #888;
+    transition: all 0.2s;
+    background: black;
+    border: none;
+    font-size: 1rem;
+    border-radius: 0.75rem 0 0 0.75rem;
+}
+
+.search-type-btn:hover {
+    color: white;
+}
+
+.search-type-menu {
+    display: none;
+    position: absolute;
+    top: calc(100% + 5px);
+    left: 0;
+    background-color: black;
+    border: 1px solid #333;
+    border-radius: 0.75rem;
+    width: 100%;
+    z-index: 1000;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+}
+
+.search-type-menu.show {
+    display: block;
+}
+
+.search-type-item {
+    padding: 0.75rem 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.search-type-item:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
+.search-type-item i {
+    width: 1.25rem;
+}
+
+.query-input-container {
+    flex: 1;
+    background: black;
+    border-radius: 0 0.75rem 0.75rem 0;
+    overflow: hidden;
+
+}
+
+.telegram-search-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 2rem;
+    text-align: center;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 0.75rem;
+    margin: 2rem 0;
+}
+
+.telegram-icon {
+    color: #0088cc;
+    font-size: 2.5rem;
+    margin-bottom: 1rem;
+}
