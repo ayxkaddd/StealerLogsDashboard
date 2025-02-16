@@ -72,9 +72,9 @@ good looking dashboard to query your infostealer logs.
     uvicorn main:app --reload
     ```
     By default, the app will be available at `http://127.0.0.1:8000`.
-4. **Import Logs to database**:
+3. **Import Logs to database**:
     ```bash
-    curl -X 'POST' 'http://127.0.0.1:8000/api/logs/import/?file_path=/path/to/your/log' -H 'accept: application/json'
+    python scripts/upload_logs_from_folder.py /path/to/your/log http://127.0.0.1:8000
     ```
 
 ---
