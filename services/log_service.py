@@ -13,8 +13,11 @@ from config import DATABASE_URL
 ANDROID_DOMAIN_PATTERN = re.compile(
     r"(?:.*==@|android://(?:[^@/]+@)?)([^/:]+)", re.IGNORECASE
 )
-SPLIT_PATTERN = re.compile(r"[\s:|;]+")
-HTTP_PREFIXES = ("http://", "https://")
+SPLIT_PATTERN = re.compile(r"[\s:|]+")
+URL_PROTOCOL_PREFIX = re.compile(r"^https?://", re.IGNORECASE)
+DOMAIN_LIKE_PATTERN = re.compile(
+    r"^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}(?::\d+)?(?:/.*)?$"
+)
 
 
 class LogService:
@@ -95,76 +98,68 @@ class LogService:
             if (cred := self._parse_log_line(line, now)) is not None
         ]
 
+    def _is_valid_url(self, candidate: str) -> bool:
+        """Check if the candidate is a valid URL (with or without protocol)."""
+        return bool(
+            URL_PROTOCOL_PREFIX.match(candidate)
+            or DOMAIN_LIKE_PATTERN.match(candidate)
+            or candidate.startswith("localhost")
+        )
+
     def _parse_log_line(self, line: str, now: datetime.datetime) -> Optional[dict]:
+        """Parse a log line and extract domain, URI, email, and password information."""
         line = line.replace("\x00", " ").strip()
         if not line:
             return None
 
-        if line[0] == "{" and line[-1] == "}":
-            try:
-                json.loads(line)
-                return None
-            except json.JSONDecodeError:
-                pass
+        if line[0] == "{" and line[-1] == "}" and '"' in line:
+            return None
 
-        result = {
-            "domain": "",
-            "uri": "/",
-            "email": "",
-            "password": "",
-            "created_at": now,
-        }
-
-        domain_match = ANDROID_DOMAIN_PATTERN.search(line)
-        if domain_match:
+        if domain_match := ANDROID_DOMAIN_PATTERN.search(line):
             domain_part = domain_match.group(1).strip("/:")
             remaining = line.split(domain_part, 1)[-1].lstrip(":/| ")
             parts = SPLIT_PATTERN.split(remaining)
-
-            result.update(
-                {
-                    "domain": f"android://{domain_part}"[:200],
-                    "email": parts[0][:200] if parts else "",
-                    "password": parts[1][:200] if len(parts) > 1 else "",
-                }
-            )
-            return result
-
-        parts_three = [part.strip() for part in line.split(":", 2)]
-        if len(parts_three) >= 3:
-            url_part = parts_three[2]
-
-            for prefix in HTTP_PREFIXES:
-                url_part = url_part.replace(prefix, "")
-
-            domain_uri = url_part.split("/", 1)
-            result.update(
-                {
-                    "domain": domain_uri[0].strip("/:")[:200],
-                    "uri": f"/{domain_uri[1]}"[:200] if len(domain_uri) > 1 else "/",
-                    "email": parts_three[0][:200],
-                    "password": parts_three[1][:200],
-                }
-            )
-            return result
-
-        clean_line = line
-        for prefix in HTTP_PREFIXES:
-            clean_line = clean_line.replace(prefix, "")
-
-        parts = [p.strip() for p in SPLIT_PATTERN.split(clean_line) if p.strip()]
-        if not parts:
-            return None
-
-        url_part = ":".join(parts[:-2]) if len(parts) >= 2 else clean_line
-        domain_uri = url_part.split("/", 1)
-
-        result.update(
-            {
-                "domain": domain_uri[0][:200],
-                "uri": f"/{domain_uri[1]}"[:200] if len(domain_uri) > 1 else "/",
-                "email": parts[-2][:200] if len(parts) >= 2 else "",
-                "password": parts[-1][:200] if parts else "",
+            return {
+                "domain": f"android://{domain_part}"[:200],
+                "uri": "/",
+                "email": parts[0][:200] if parts else "",
+                "password": parts[1][:200] if len(parts) > 1 else "",
+                "created_at": now,
             }
-        )
-        return result
+
+        parts = [p.strip() for p in line.split(":", 2)]
+
+        if parts and self._is_valid_url(parts[0]):
+            url_part = parts[0]
+            email = parts[1][:200] if len(parts) > 1 else ""
+            password = parts[2][:200] if len(parts) > 2 else ""
+        elif len(parts) > 2 and self._is_valid_url(parts[2]):
+            url_part = parts[2]
+            email = parts[0][:200]
+            password = parts[1][:200]
+        else:
+            clean_line = line.replace("http://", "").replace("https://", "")
+            parts_fallback = [p for p in SPLIT_PATTERN.split(clean_line) if p]
+            if not parts_fallback:
+                return None
+
+            password = parts_fallback[-1][:200]
+            email = (
+                parts_fallback[-2].split(":", 1)[0][:200]
+                if len(parts_fallback) > 1
+                else ""
+            )
+            url_part = (
+                ":".join(parts_fallback[:-2]) if len(parts_fallback) > 2 else clean_line
+            )
+
+        url_clean = url_part.replace("http://", "").replace("https://", "")
+        domain, *uri_parts = url_clean.split("/", 1)
+
+        return {
+            "domain": domain.strip("/:")[:200],
+            "uri": f"/{uri_parts[0]}"[:200] if uri_parts else "/",
+            "email": email,
+            "password": password,
+            "created_at": now,
+        }
