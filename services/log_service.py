@@ -4,7 +4,7 @@ import datetime
 import json
 import re
 from typing import List, Generator, Optional
-from sqlalchemy import or_, select, bindparam, insert
+from sqlalchemy import or_, select, insert
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 from models.log_models import Log, LogCredential, SearchField, SearchRequest
@@ -13,8 +13,8 @@ from config import DATABASE_URL
 ANDROID_DOMAIN_PATTERN = re.compile(
     r"(?:.*==@|android://(?:[^@/]+@)?)([^/:]+)", re.IGNORECASE
 )
-SPLIT_PATTERN = re.compile(r"[\s:|]+")
-URI_SPLIT_PATTERN = re.compile(r"/(.*)")
+SPLIT_PATTERN = re.compile(r"[\s:|;]+")
+HTTP_PREFIXES = ("http://", "https://")
 
 
 class LogService:
@@ -107,46 +107,64 @@ class LogService:
             except json.JSONDecodeError:
                 pass
 
+        result = {
+            "domain": "",
+            "uri": "/",
+            "email": "",
+            "password": "",
+            "created_at": now,
+        }
+
         domain_match = ANDROID_DOMAIN_PATTERN.search(line)
         if domain_match:
             domain_part = domain_match.group(1).strip("/:")
-            android_domain = f"android://{domain_part}"
-
             remaining = line.split(domain_part, 1)[-1].lstrip(":/| ")
-            parts = [p for p in SPLIT_PATTERN.split(remaining) if p]
+            parts = SPLIT_PATTERN.split(remaining)
 
-            email = parts[0][:200] if len(parts) >= 1 else ""
-            password = parts[1][:200] if len(parts) >= 2 else ""
+            result.update(
+                {
+                    "domain": f"android://{domain_part}"[:200],
+                    "email": parts[0][:200] if parts else "",
+                    "password": parts[1][:200] if len(parts) > 1 else "",
+                }
+            )
+            return result
 
-            return {
-                "domain": android_domain[:200],
-                "uri": "/",
-                "email": email,
-                "password": password,
-                "created_at": now,
-            }
+        parts_three = [part.strip() for part in line.split(":", 2)]
+        if len(parts_three) >= 3:
+            url_part = parts_three[2]
 
-        clean_line = line.replace("http://", "").replace("https://", "")
+            for prefix in HTTP_PREFIXES:
+                url_part = url_part.replace(prefix, "")
+
+            domain_uri = url_part.split("/", 1)
+            result.update(
+                {
+                    "domain": domain_uri[0].strip("/:")[:200],
+                    "uri": f"/{domain_uri[1]}"[:200] if len(domain_uri) > 1 else "/",
+                    "email": parts_three[0][:200],
+                    "password": parts_three[1][:200],
+                }
+            )
+            return result
+
+        clean_line = line
+        for prefix in HTTP_PREFIXES:
+            clean_line = clean_line.replace(prefix, "")
+
         parts = [p.strip() for p in SPLIT_PATTERN.split(clean_line) if p.strip()]
-
         if not parts:
             return None
 
-        password = parts[-1][:200] if parts else ""
-        email = parts[-2][:200] if len(parts) >= 2 else ""
         url_part = ":".join(parts[:-2]) if len(parts) >= 2 else clean_line
+        domain_uri = url_part.split("/", 1)
 
-        if "/" in url_part:
-            domain, uri_part = url_part.split("/", 1)
-            uri = "/" + uri_part
-        else:
-            domain = url_part
-            uri = "/"
-
-        return {
-            "domain": domain[:200],
-            "uri": uri[:200],
-            "email": email,
-            "password": password,
-            "created_at": now,
-        }
+        result.update(
+            {
+                "domain": domain_uri[0][:200],
+                "uri": f"/{domain_uri[1]}"[:200] if len(domain_uri) > 1 else "/",
+                "email": parts[-2][:200] if len(parts) >= 2 else "",
+                "password": parts[-1][:200] if parts else "",
+            }
+        )
+        return result
