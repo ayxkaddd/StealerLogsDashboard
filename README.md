@@ -69,7 +69,7 @@ good looking dashboard to query your infostealer logs.
     ```
 2. **Start the Dashboard**:
     ```bash
-    uvicorn main:app --reload
+    python main.py
     ```
     By default, the app will be available at `http://127.0.0.1:8000`.
 3. **Import Logs to database**:
